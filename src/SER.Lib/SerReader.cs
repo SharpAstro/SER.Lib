@@ -15,6 +15,14 @@ public sealed unsafe class SerReader : IDisposable
     private readonly MemoryMappedFile _mmf;
     private readonly MemoryMappedViewAccessor _view;
     private readonly byte* _basePtr;
+    private readonly long _fileLength;
+    private readonly long _framesEnd;
+    // The per-frame timestamp trailer lives at the END of the file. Reading it during Open would fault
+    // a page hundreds of MB in -- a full head-seek on a spinning disk, on EVERY open, purely to derive
+    // the frame rate. It is read lazily instead, so browsing/scrubbing a folder of large files never
+    // touches the file tail; only an explicit Timestamps/FramesPerSecond access (e.g. starting playback)
+    // pays for it, once. Lazy<T> gives thread-safe single-init for the off-thread loader + render reads.
+    private readonly Lazy<(ImmutableArray<DateTimeOffset> Timestamps, double? Fps)> _trailer;
     private bool _disposed;
 
     /// <summary>The parsed file header.</summary>
@@ -22,22 +30,32 @@ public sealed unsafe class SerReader : IDisposable
 
     /// <summary>
     /// Per-frame timestamps in UTC, or empty when the file carries no trailer (v2 files, or a file
-    /// whose header start time is unset). Indexed by frame.
+    /// whose header start time is unset). Indexed by frame. Read lazily from the file trailer on first
+    /// access -- see the <c>_trailer</c> field for why.
     /// </summary>
-    public ImmutableArray<DateTimeOffset> Timestamps { get; }
+    public ImmutableArray<DateTimeOffset> Timestamps => _trailer.Value.Timestamps;
 
-    /// <summary>Frame rate derived from the first/last timestamps, or null when unavailable.</summary>
-    public double? FramesPerSecond { get; }
+    /// <summary>Frame rate derived from the first/last timestamps, or null when unavailable. Triggers
+    /// the lazy trailer read on first access.</summary>
+    public double? FramesPerSecond => _trailer.Value.Fps;
 
     private SerReader(MemoryMappedFile mmf, MemoryMappedViewAccessor view, byte* basePtr,
-        SerHeader header, ImmutableArray<DateTimeOffset> timestamps, double? framesPerSecond)
+        SerHeader header, long fileLength, long framesEnd)
     {
         _mmf = mmf;
         _view = view;
         _basePtr = basePtr;
         Header = header;
-        Timestamps = timestamps;
-        FramesPerSecond = framesPerSecond;
+        _fileLength = fileLength;
+        _framesEnd = framesEnd;
+        _trailer = new Lazy<(ImmutableArray<DateTimeOffset> Timestamps, double? Fps)>(ReadTrailerLazily);
+    }
+
+    private (ImmutableArray<DateTimeOffset> Timestamps, double? Fps) ReadTrailerLazily()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var timestamps = ReadTrailer(_basePtr, Header, _fileLength, _framesEnd);
+        return (timestamps, ComputeFps(timestamps));
     }
 
     /// <summary>Frame width in pixels.</summary>
@@ -111,10 +129,11 @@ public sealed unsafe class SerReader : IDisposable
                     $"SER file '{path}' is truncated: {header.FrameCount} frame(s) x {frameSize} bytes plus the 178-byte header exceed the {length}-byte file.");
             }
 
-            var timestamps = ReadTrailer(basePtr, header, length, framesEnd);
-            var fps = ComputeFps(timestamps);
-
-            var reader = new SerReader(mmf, view, basePtr, header, timestamps, fps);
+            // NB: the per-frame timestamp trailer (at the END of the file) is deliberately NOT read
+            // here -- it is read lazily on first Timestamps/FramesPerSecond access (see the _trailer
+            // field). Open only parses the 178-byte header already mapped at offset 0, so opening a
+            // multi-gigabyte file off a spinning disk does not seek to the file tail.
+            var reader = new SerReader(mmf, view, basePtr, header, length, framesEnd);
             view = null; // ownership transferred to the reader
             return reader;
         }
