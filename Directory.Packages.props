@@ -9,6 +9,8 @@
     <!-- SharpAstro siblings (SER.Viewer) -->
     <PackageVersion Include="DIR.Lib" Version="6.0.*" />
     <PackageVersion Include="SdlVulkan.Renderer" Version="6.7.*" />
+    <!-- PNG encode for headless frame export / render (SER.Viewer) -->
+    <PackageVersion Include="SharpAstro.Png" Version="3.3.391" />
     <!-- SDL3 bindings + native (SER.Viewer) -->
     <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
     <PackageVersion Include="SDL3-CS.Native" Version="3.5.0-preview.20260205-174353" />

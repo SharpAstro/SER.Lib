@@ -14,6 +14,7 @@
     <PackageReference Include="SDL3-CS" />
     <PackageReference Include="SDL3-CS.Native" />
     <PackageReference Include="Vortice.Vulkan" />
+    <PackageReference Include="SharpAstro.Png" />
   </ItemGroup>
 
   <!-- SharpAstro siblings: ProjectReference for in-tree iteration, PackageReference on CI. -->
