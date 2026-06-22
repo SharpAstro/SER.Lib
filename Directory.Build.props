@@ -1,0 +1,26 @@
+<Project>
+
+  <PropertyGroup>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    Auto-detect sibling SharpAstro working copies for fast in-tree iteration.
+    When DIR.Lib and SdlVulkan.Renderer are checked out next to this repo, their
+    projects are used via ProjectReference (see SER.Viewer's UseLocalSiblings
+    branch); CI and package-only clones fall through to PackageReference
+    automatically. Mirrors the switch in ../tianwen/src/Directory.Build.props and
+    ../../sebgod/chess/Directory.Build.props.
+    Override: dotnet build -p:UseLocalSiblings=false
+  -->
+  <PropertyGroup>
+    <UseLocalSiblings Condition="'$(UseLocalSiblings)' == ''
+      AND Exists('$(MSBuildThisFileDirectory)..\DIR.Lib\src\DIR.Lib\DIR.Lib.csproj')
+      AND Exists('$(MSBuildThisFileDirectory)..\SdlVulkan.Renderer\src\SdlVulkan.Renderer\SdlVulkan.Renderer.csproj')">true</UseLocalSiblings>
+  </PropertyGroup>
+
+</Project>

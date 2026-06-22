@@ -1,0 +1,23 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Allow X.Y.* floating pins so sibling build-counter republishes
+         (e.g. DIR.Lib 6.0.1111 -> 6.0.1131) flow in on restore without a commit. -->
+    <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- SharpAstro siblings (SER.Viewer) -->
+    <PackageVersion Include="DIR.Lib" Version="6.0.*" />
+    <PackageVersion Include="SdlVulkan.Renderer" Version="6.7.*" />
+    <!-- SDL3 bindings + native (SER.Viewer) -->
+    <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
+    <PackageVersion Include="SDL3-CS.Native" Version="3.5.0-preview.20260205-174353" />
+    <PackageVersion Include="Vortice.Vulkan" Version="3.2.1" />
+    <!-- Test stack -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="Shouldly" Version="4.3.0" />
+    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
+  </ItemGroup>
+</Project>
