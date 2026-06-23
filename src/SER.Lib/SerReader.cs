@@ -202,6 +202,67 @@ public sealed unsafe class SerReader : IDisposable
         }
     }
 
+    /// <summary>
+    /// Copies frames <c>[<paramref name="startFrame"/>, startFrame + <paramref name="count"/>)</c> to a
+    /// new SER file at <paramref name="destinationPath"/>, preserving geometry, bit depth, colour mode,
+    /// observer/instrument/telescope metadata, byte order, and -- when the source carries them -- the
+    /// matching per-frame timestamps. Frame bytes are copied <b>verbatim</b> (no per-sample decode), so
+    /// the slice is loss-free for any bit depth or endianness. Useful for carving a small, shareable
+    /// clip (e.g. a CI test fixture) out of a multi-gigabyte capture. Returns the number of frames written.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The range falls outside <c>[0, FrameCount]</c>.</exception>
+    public int CutTo(string destinationPath, int startFrame, int count)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentException.ThrowIfNullOrEmpty(destinationPath);
+        ArgumentOutOfRangeException.ThrowIfNegative(startFrame);
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        var end = checked(startFrame + count);
+        if (end > Header.FrameCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(count), count,
+                $"Frame range [{startFrame}, {end}) exceeds the source's {Header.FrameCount} frame(s).");
+        }
+
+        // Preserve timestamps when present (triggers the lazy trailer read, once).
+        var timestamps = Timestamps;
+        var hasTimestamps = !timestamps.IsDefaultOrEmpty;
+
+        // Verbatim copy: stamp the source's own LittleEndian flag so the raw bytes round-trip unchanged
+        // regardless of the source's byte order, with no per-sample decode.
+        using var writer = new SerWriter(destinationPath, Header.Width, Header.Height, Header.ColorId,
+            Header.PixelDepthPerPlane, Header.Observer, Header.Instrument, Header.Telescope,
+            Header.LuId, Header.LittleEndianFlag);
+
+        var frameSize = Header.FrameSizeBytes;
+        for (var i = startFrame; i < end; i++)
+        {
+            var frame = FrameSpan(i, frameSize);
+            if (hasTimestamps)
+            {
+                writer.AppendFrame(frame, timestamps[i]);
+            }
+            else
+            {
+                writer.AppendFrame(frame);
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Opens <paramref name="sourcePath"/> and writes frames
+    /// <c>[<paramref name="startFrame"/>, startFrame + <paramref name="count"/>)</c> to a new SER file at
+    /// <paramref name="destinationPath"/>. Convenience wrapper over <see cref="CutTo"/>; returns the
+    /// number of frames written.
+    /// </summary>
+    public static int Cut(string sourcePath, string destinationPath, int startFrame, int count)
+    {
+        using var reader = Open(sourcePath);
+        return reader.CutTo(destinationPath, startFrame, count);
+    }
+
     private long ValidateFrameIndex(int index)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

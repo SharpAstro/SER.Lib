@@ -11,8 +11,8 @@
     <!-- AssemblyVersion fixed at major.minor.0.0; the NuGet package version is composed in
          CI via $(VERSION_PREFIX)$(VERSION_REV)+$(VERSION_HASH). Bump VersionPrefix here on
          minor feature additions / breaking changes; CI's run_number drives the patch. -->
-    <VersionPrefix>1.0.0</VersionPrefix>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <VersionPrefix>1.1.0</VersionPrefix>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
     <PackageId>SER.Lib</PackageId>
     <Description>Reader and writer for the SER planetary-imaging video format (Lucam Recorder, spec v3), with memory-mapped frame-accurate random access and per-frame timestamps. Pure managed, AOT/trim friendly.</Description>
     <PackageTags>Astronomy;SER;Lucam;Video;Planetary;Imaging;Astrophotography</PackageTags>
