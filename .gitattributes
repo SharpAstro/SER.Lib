@@ -10,6 +10,7 @@
 
 # Binary fixtures (e.g. sample .ser frames) must never be munged.
 *.ser binary
+*.gz binary
 *.png binary
 *.tif binary
 *.tiff binary

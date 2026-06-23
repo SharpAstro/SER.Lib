@@ -1,23 +1,39 @@
+using System.IO.Compression;
 using Shouldly;
 using Xunit;
 
 namespace SharpAstro.Ser.Tests;
 
 /// <summary>
-/// Opt-in smoke test against a real capture. Set the <c>SER_SAMPLE_FILE</c> environment variable to a
-/// <c>.ser</c> path to exercise the reader end-to-end (header, random-access seek, timestamps) on a
-/// file produced by real capture software. Skipped in CI / when the variable is unset.
+/// Smoke test against a genuine capture (header from real software, real Bayer colour id, a real
+/// timestamp trailer, real 8-bit Bayer pixel layout). It runs in CI off a small committed fixture: a
+/// 2-frame slice of a 640x480 8-bit RGGB Jupiter capture, carved out with <see cref="SerReader.CutTo"/>
+/// and gzipped (decompressed to a scratch file here, since <see cref="SerReader"/> memory-maps a path).
+/// Point <c>SER_SAMPLE_FILE</c> at an uncompressed <c>.ser</c> to run it against any other capture.
 /// </summary>
 public class SerRealFileTests(ITestOutputHelper output)
 {
     [Fact]
     public void DecodesRealSampleFile()
     {
-        var path = Environment.GetEnvironmentVariable("SER_SAMPLE_FILE");
-        Assert.SkipUnless(!string.IsNullOrEmpty(path) && File.Exists(path),
-            "Set SER_SAMPLE_FILE to a .ser path to run this smoke test.");
+        var envPath = Environment.GetEnvironmentVariable("SER_SAMPLE_FILE");
+        var usingCommittedFixture = string.IsNullOrEmpty(envPath) || !File.Exists(envPath);
 
-        using var reader = SerReader.Open(path!);
+        using var scratch = new TempFile();
+        string path;
+        if (usingCommittedFixture)
+        {
+            var gz = Path.Combine(AppContext.BaseDirectory, "Fixtures", "jupiter-sample.ser.gz");
+            File.Exists(gz).ShouldBeTrue($"Committed fixture missing (expected next to the test assembly): {gz}");
+            DecompressGzip(gz, scratch.Path);
+            path = scratch.Path;
+        }
+        else
+        {
+            path = envPath!;
+        }
+
+        using var reader = SerReader.Open(path);
 
         output.WriteLine($"File:        {path}");
         output.WriteLine($"FileId:      '{reader.Header.FileId}' (valid={reader.Header.HasValidFileId})");
@@ -35,12 +51,27 @@ public class SerRealFileTests(ITestOutputHelper output)
 
         DumpFrameStats(reader, 0);
         DumpFrameStats(reader, reader.FrameCount / 2);
-        DumpFrameStats(reader, reader.FrameCount - 1); // proves O(1) seek to the last frame of a large file
+        DumpFrameStats(reader, reader.FrameCount - 1); // proves O(1) seek to the last frame
 
         reader.Header.HasValidFileId.ShouldBeTrue();
         reader.Width.ShouldBeGreaterThan(0);
         reader.Height.ShouldBeGreaterThan(0);
         reader.FrameCount.ShouldBeGreaterThan(0);
+
+        if (usingCommittedFixture)
+        {
+            // Exact shape of the committed Jupiter slice -- guards the fixture (and the Cut that made it)
+            // against silent corruption.
+            reader.Width.ShouldBe(640);
+            reader.Height.ShouldBe(480);
+            reader.ColorId.ShouldBe(SerColorId.BayerRGGB);
+            reader.PixelDepthPerPlane.ShouldBe(8);
+            reader.FrameCount.ShouldBe(2);
+            reader.HasTimestamps.ShouldBeTrue();
+            reader.Timestamps[1].ShouldBeGreaterThan(reader.Timestamps[0]); // ascending capture order
+            reader.FramesPerSecond.ShouldNotBeNull();
+            reader.FramesPerSecond!.Value.ShouldBeGreaterThan(0);
+        }
     }
 
     private void DumpFrameStats(SerReader reader, int index)
@@ -58,5 +89,13 @@ public class SerRealFileTests(ITestOutputHelper output)
         }
 
         output.WriteLine($"Frame {index,6}: min={min} max={max} mean={(double)sum / samples.Length:F1} (sample ceiling {reader.MaxSampleValue})");
+    }
+
+    private static void DecompressGzip(string gzipPath, string outputPath)
+    {
+        using var input = File.OpenRead(gzipPath);
+        using var gzip = new GZipStream(input, CompressionMode.Decompress);
+        using var output = File.Create(outputPath);
+        gzip.CopyTo(output);
     }
 }

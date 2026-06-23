@@ -47,6 +47,19 @@ foreach (var (bytes, time) in frames)
     w.AppendFrame(bytes, time);   // timestamps -> the v3 trailer on Close()
 ```
 
+Slicing a frame range out of a (possibly multi-gigabyte) capture, e.g. to carve a small shareable
+clip. Frame bytes are copied verbatim -- no decode -- so the slice is loss-free for any bit depth or
+endianness, and the matching timestamps come along:
+
+```csharp
+// 200 frames starting at frame 15000 -> a new, self-contained .ser
+SerReader.Cut("jupiter.ser", "clip.ser", startFrame: 15000, count: 200);
+
+// or from an already-open reader:
+using var ser = SerReader.Open("jupiter.ser");
+ser.CutTo("clip.ser", startFrame: 15000, count: 200);
+```
+
 ## Format notes & gotchas
 
 The on-disk format is a fixed **178-byte little-endian header**, the frame data, and an optional

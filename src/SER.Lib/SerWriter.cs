@@ -24,14 +24,22 @@ public sealed class SerWriter : IDisposable
     private readonly string _observer;
     private readonly string _instrument;
     private readonly string _telescope;
+    private readonly int _littleEndianFlag;
     private readonly List<long> _timestampTicks = [];
     private bool? _timestamped;
     private int _frameCount;
     private bool _disposed;
 
     /// <summary>Creates a writer for a new SER file at <paramref name="path"/> (overwriting any existing file).</summary>
+    /// <param name="littleEndianFlag">
+    /// The raw <c>LittleEndian</c> header flag to stamp (0 or 1). The default (-1) picks the value that
+    /// matches the host byte order under the Match-SER-Player convention -- correct when the caller
+    /// supplies host-order frame data. Pass an explicit flag only to write frame bytes <i>verbatim</i>
+    /// in some other byte order (e.g. <see cref="SerReader.CutTo"/> copying a 16-bit big-endian source
+    /// unchanged); the bytes are written as-is, so the flag must describe them.
+    /// </param>
     public SerWriter(string path, int width, int height, SerColorId colorId, int pixelDepthPerPlane,
-        string observer = "", string instrument = "", string telescope = "", int luId = 0)
+        string observer = "", string instrument = "", string telescope = "", int luId = 0, int littleEndianFlag = -1)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
@@ -49,6 +57,7 @@ public sealed class SerWriter : IDisposable
         _observer = observer ?? "";
         _instrument = instrument ?? "";
         _telescope = telescope ?? "";
+        _littleEndianFlag = littleEndianFlag;
 
         var bytesPerSample = pixelDepthPerPlane <= 8 ? 1 : 2;
         _frameSize = (long)width * height * colorId.PlaneCount * bytesPerSample;
@@ -123,7 +132,7 @@ public sealed class SerWriter : IDisposable
         // exactly. A non-zero DateTime is also what tells the reader a trailer is present.
         var header = SerHeader.Create(_colorId, _width, _height, _pixelDepthPerPlane, _frameCount,
             _observer, _instrument, _telescope,
-            dateTimeTicks: startTicks, dateTimeUtcTicks: startTicks, luId: _luId);
+            dateTimeTicks: startTicks, dateTimeUtcTicks: startTicks, luId: _luId, littleEndianFlag: _littleEndianFlag);
 
         Span<byte> headerBytes = stackalloc byte[SerHeader.Size];
         header.Write(headerBytes);

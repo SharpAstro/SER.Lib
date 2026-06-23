@@ -25,4 +25,10 @@
     <ProjectReference Include="..\SER.Lib\SER.Lib.csproj" />
   </ItemGroup>
 
+  <!-- Committed test fixtures (e.g. the small gzipped real-capture .ser slice) copied next to the test
+       assembly so SerRealFileTests can locate them via AppContext.BaseDirectory, no absolute paths. -->
+  <ItemGroup>
+    <None Update="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
