@@ -1,15 +1,16 @@
 # SER.Lib
 
 A pure-managed **reader and writer for the SER planetary-imaging video format** (the *Lucam
-Recorder* format, spec v3), plus a standalone cross-platform **viewer** (`ser-viewer`).
+Recorder* format, spec v3).
 
 SER is the de-facto container for lunar / planetary / solar *lucky-imaging* captures: thousands of
 raw mono, Bayer, or RGB frames in one file, with optional per-frame UTC timestamps. SER.Lib decodes
 and encodes it with **memory-mapped, frame-accurate random access** (seek to any frame in O(1),
 even in multi-gigabyte files), and is **AOT- and trim-friendly** with zero external dependencies.
 
-> Part of the [SharpAstro](https://github.com/SharpAstro) family (alongside `FITS.Lib`, `DIR.Lib`,
-> `SdlVulkan.Renderer`).
+> Part of the [SharpAstro](https://github.com/SharpAstro) family (alongside `FITS.Lib`). It is
+> consumed by [TianWen](https://github.com/SharpAstro/tianwen), whose `tianwen-fits` viewer opens
+> SER captures as a frame sequence.
 
 ## Install
 
@@ -62,12 +63,6 @@ per-frame timestamp **trailer**. A few real-world subtleties SER.Lib handles for
 - **v2 vs v3:** RGB/BGR true colour, arbitrary bit depths (1-16 with MSB/LSB alignment), and the
   timestamp trailer + UTC start time are v3 additions. SER.Lib reads v2 files (mono/Bayer, 8/16-bit,
   no trailer) transparently.
-
-## `ser-viewer`
-
-A standalone SDL3 + Vulkan viewer with frame playback, a scrub transport, and inline
-processing/histogram panels — built on `SdlVulkan.Renderer` + `DIR.Lib`. Published as native
-AOT binaries (including **win-arm64**). See the repository releases.
 
 ## License
 
