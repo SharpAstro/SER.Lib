@@ -1,21 +1,9 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <!-- Allow X.Y.* floating pins so sibling build-counter republishes
-         (e.g. DIR.Lib 6.0.1111 -> 6.0.1131) flow in on restore without a commit. -->
-    <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <!-- SharpAstro siblings (SER.Viewer) -->
-    <PackageVersion Include="DIR.Lib" Version="6.0.*" />
-    <PackageVersion Include="SdlVulkan.Renderer" Version="6.7.*" />
-    <!-- PNG encode for headless frame export / render (SER.Viewer) -->
-    <PackageVersion Include="SharpAstro.Png" Version="3.3.391" />
-    <!-- SDL3 bindings + native (SER.Viewer) -->
-    <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
-    <PackageVersion Include="SDL3-CS.Native" Version="3.5.0-preview.20260205-174353" />
-    <PackageVersion Include="Vortice.Vulkan" Version="3.2.1" />
-    <!-- Test stack -->
+    <!-- Test stack (the SER.Lib library itself has zero external dependencies) -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />

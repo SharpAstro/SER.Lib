@@ -2,6 +2,5 @@
   <Folder Name="/src/">
     <Project Path="src/SER.Lib/SER.Lib.csproj" />
     <Project Path="src/SER.Lib.Tests/SER.Lib.Tests.csproj" />
-    <Project Path="src/SER.Viewer/SER.Viewer.csproj" />
   </Folder>
 </Solution>
