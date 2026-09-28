@@ -60,6 +60,17 @@ using var ser = SerReader.Open("jupiter.ser");
 ser.CutTo("clip.ser", startFrame: 15000, count: 200);
 ```
 
+Cropping every frame to a window, e.g. a small planet tracked across a whole-sensor capture. The crop is
+**verbatim**: the source's own header bytes with only the width and height changed (its padded strings
+and both start times as they were), each window as its bytes are stored, and the timestamp trailer plus
+anything after it byte for byte, so nothing is re-encoded. The callback places each frame's window as
+it is written; a Bayer mosaic's origin must be even, or the pattern would re-phase:
+
+```csharp
+using var ser = SerReader.Open("jupiter.ser");
+ser.CropTo("jupiter-crop.ser", width: 288, height: 304, originOf: i => TrackedOrigin(i));
+```
+
 ## Format notes & gotchas
 
 The on-disk format is a fixed **178-byte little-endian header**, the frame data, and an optional

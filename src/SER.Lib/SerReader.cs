@@ -263,6 +263,87 @@ public sealed unsafe class SerReader : IDisposable
         return reader.CutTo(destinationPath, startFrame, count);
     }
 
+    /// <summary>
+    /// Writes a <paramref name="width"/> x <paramref name="height"/> window of EVERY frame to a new SER file at
+    /// <paramref name="destinationPath"/>, verbatim: the source's own 178 header bytes with only the width and height
+    /// changed (its strings as they were padded, both start times, the byte-order flag), each frame's window as its bytes
+    /// are stored, and everything after the frame data (the timestamp trailer, and anything a capture program appended)
+    /// byte for byte. A reader of the crop decodes the same timestamps from the same bytes, a trailer in local time
+    /// included, where <see cref="CutTo"/> writes a new header and re-encodes the trailer in UTC. Returns the number of
+    /// frames written; when it throws, nothing is left at <paramref name="destinationPath"/>.
+    /// </summary>
+    /// <param name="originOf">
+    /// Where frame <c>i</c>'s window starts on the source, asked once per frame, in order, just before that frame is written,
+    /// so a caller can track a moving target by looking at frame <c>i</c> itself. A Bayer mosaic's origin must be even on
+    /// both axes: an odd one would re-phase the pattern, which the header would then misdescribe.
+    /// </param>
+    public int CropTo(string destinationPath, int width, int height, Func<int, (int X, int Y)> originOf,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentException.ThrowIfNullOrEmpty(destinationPath);
+        ArgumentNullException.ThrowIfNull(originOf);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(width, Header.Width);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(height, Header.Height);
+
+        var pixelBytes = Header.PlaneCount * Header.BytesPerSample;
+        var rowBytes = width * pixelBytes;
+        var sourceRowBytes = (long)Header.Width * pixelBytes;
+        var frameSize = Header.FrameSizeBytes;
+        var window = new byte[checked(rowBytes * height)];
+        var headerBytes = new byte[SerHeader.Size];
+        new ReadOnlySpan<byte>(_basePtr, SerHeader.Size).CopyTo(headerBytes);
+        BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(26), width);
+        BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(30), height);
+
+        var stream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 1 << 20);
+        try
+        {
+            stream.Write(headerBytes);
+            for (var i = 0; i < Header.FrameCount; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var (x, y) = originOf(i);
+                if (x < 0 || y < 0 || x > Header.Width - width || y > Header.Height - height)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(originOf), (x, y),
+                        $"Frame {i}'s {width}x{height} window at ({x}, {y}) is not inside the {Header.Width}x{Header.Height} frame.");
+                }
+                if (Header.ColorId.IsBayer && ((x | y) & 1) != 0)
+                {
+                    throw new ArgumentException(
+                        $"Frame {i}'s window at ({x}, {y}) is odd: it would re-phase the {Header.ColorId} mosaic the header names.", nameof(originOf));
+                }
+
+                var frame = _basePtr + SerHeader.Size + (i * frameSize);
+                for (var row = 0; row < height; row++)
+                {
+                    new ReadOnlySpan<byte>(frame + ((y + row) * sourceRowBytes) + ((long)x * pixelBytes), rowBytes)
+                        .CopyTo(window.AsSpan(row * rowBytes, rowBytes));
+                }
+                stream.Write(window);
+            }
+
+            // The trailer and whatever else follows the frames, as it is: its bytes, not the timestamps they decode to.
+            const int chunk = 1 << 20;
+            for (var offset = _framesEnd; offset < _fileLength; offset += chunk)
+            {
+                stream.Write(new ReadOnlySpan<byte>(_basePtr + offset, (int)Math.Min(chunk, _fileLength - offset)));
+            }
+            stream.Dispose();
+        }
+        catch
+        {
+            stream.Dispose();
+            File.Delete(destinationPath);
+            throw;
+        }
+
+        return Header.FrameCount;
+    }
+
     private long ValidateFrameIndex(int index)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
