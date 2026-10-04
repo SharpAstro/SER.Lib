@@ -303,12 +303,33 @@ public static class SerImaging
     private static float AvgV(ReadOnlySpan<ushort> s, int w, int h, int x, int y)
         => (At(s, w, h, x, y - 1) + At(s, w, h, x, y + 1)) * 0.5f;
 
+    // A tap outside the frame reads the frame mirrored about its edge sample, which keeps the tap's colour: a mosaic's colour
+    // alternates every sample, and a mirror about the edge maps x to -x or 2(n-1)-x, both of x's parity. Repeating the edge
+    // sample instead read the NEIGHBOURING colour, so every demosaic mixed colours along the frame's outer two rows and
+    // columns wherever the colours' levels differ (a sky with a pedestal read 13 % off in blue, tianwen #1258).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static float At(ReadOnlySpan<ushort> s, int w, int h, int x, int y)
+        => s[(Mirror(y, h) * w) + Mirror(x, w)];
+
+    // Index i of n reflected about the ends (0 and n-1, each read once), for any i: the reflection repeats every 2(n-1).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int Mirror(int i, int n)
     {
-        if (x < 0) x = 0; else if (x >= w) x = w - 1;
-        if (y < 0) y = 0; else if (y >= h) y = h - 1;
-        return s[(y * w) + x];
+        if ((uint)i < (uint)n)
+        {
+            return i;
+        }
+        if (n == 1)
+        {
+            return 0;
+        }
+        var period = 2 * (n - 1);
+        i %= period;
+        if (i < 0)
+        {
+            i += period;
+        }
+        return i < n ? i : period - i;
     }
 
     private static float Clamp01(float v) => v < 0f ? 0f : v > 1f ? 1f : v;
