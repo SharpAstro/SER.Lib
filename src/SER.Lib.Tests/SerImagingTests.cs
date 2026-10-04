@@ -27,6 +27,49 @@ public class SerImagingTests
         }
     }
 
+    // Each colour flat at its own level (a sky with a pedestal a channel) must demosaic to those levels at EVERY pixel, the frame's
+    // outer two rows and columns included: a tap outside the frame has to read its own colour. Repeating the edge sample read the
+    // neighbouring colour there (tianwen #1258). Every pattern phase and odd and even sizes, so each edge is met by each colour.
+    [Theory]
+    [InlineData(SerDebayer.Mhc, SerColorId.BayerRGGB, 16, 12)]
+    [InlineData(SerDebayer.Mhc, SerColorId.BayerBGGR, 15, 13)]
+    [InlineData(SerDebayer.Mhc, SerColorId.BayerGRBG, 9, 10)]
+    [InlineData(SerDebayer.Mhc, SerColorId.BayerGBRG, 10, 9)]
+    [InlineData(SerDebayer.Bilinear, SerColorId.BayerRGGB, 16, 12)]
+    [InlineData(SerDebayer.Bilinear, SerColorId.BayerBGGR, 15, 13)]
+    [InlineData(SerDebayer.Bilinear, SerColorId.BayerGRBG, 9, 10)]
+    [InlineData(SerDebayer.Bilinear, SerColorId.BayerGBRG, 10, 9)]
+    public void Debayer_EachColourFlat_ReproducesItsLevelUpToTheFramesEdge(SerDebayer debayer, SerColorId pattern, int w, int h)
+    {
+        const int max = 255;
+        const ushort red = 90, green = 60, blue = 120;
+        var (rx, ry) = pattern switch
+        {
+            SerColorId.BayerRGGB => (0, 0),
+            SerColorId.BayerGRBG => (1, 0),
+            SerColorId.BayerGBRG => (0, 1),
+            _ => (1, 1),
+        };
+        var samples = new ushort[w * h];
+        for (var y = 0; y < h; y++)
+        {
+            for (var x = 0; x < w; x++)
+            {
+                var (xRed, yRed) = ((x & 1) == rx, (y & 1) == ry);
+                samples[(y * w) + x] = xRed && yRed ? red : !xRed && !yRed ? blue : green;
+            }
+        }
+
+        var rgb = SerImaging.DecodeToLinearRgb(samples, w, h, pattern, max, debayer);
+
+        for (var i = 0; i < w * h; i++)
+        {
+            rgb[i * 3].ShouldBe(red / (float)max, tolerance: 1e-5f, $"red at ({i % w}, {i / w})");
+            rgb[(i * 3) + 1].ShouldBe(green / (float)max, tolerance: 1e-5f, $"green at ({i % w}, {i / w})");
+            rgb[(i * 3) + 2].ShouldBe(blue / (float)max, tolerance: 1e-5f, $"blue at ({i % w}, {i / w})");
+        }
+    }
+
     [Fact]
     public void Mhc_KnownChannel_PassesThroughExactlyAtItsOwnSite()
     {
@@ -103,13 +146,21 @@ public class SerImagingTests
             SerImaging.DecodeToLinearRgb(new ushort[10], 4, 4, SerColorId.Mono, 255));
     }
 
-    [Fact]
-    public void Mhc_SmallImage_DoesNotThrowAtEdges()
+    // A 5x5 kernel on a frame narrower than its reach mirrors more than once, down to a single sample.
+    [Theory]
+    [InlineData(3, 3)]
+    [InlineData(2, 2)]
+    [InlineData(1, 1)]
+    [InlineData(2, 5)]
+    public void Mhc_SmallImage_DoesNotThrowAtEdges(int w, int h)
     {
-        // 5x5 kernel on a 3x3 image exercises clamping on every pixel.
-        var samples = new ushort[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-        var rgb = SerImaging.DecodeToLinearRgb(samples, 3, 3, SerColorId.BayerRGGB, 255, SerDebayer.Mhc);
-        rgb.Length.ShouldBe(3 * 3 * 3);
+        var samples = new ushort[w * h];
+        for (var i = 0; i < samples.Length; i++)
+        {
+            samples[i] = (ushort)(i + 1);
+        }
+        var rgb = SerImaging.DecodeToLinearRgb(samples, w, h, SerColorId.BayerRGGB, 255, SerDebayer.Mhc);
+        rgb.Length.ShouldBe(w * h * 3);
         foreach (var v in rgb)
         {
             v.ShouldBeInRange(0f, 1f);
