@@ -30,13 +30,14 @@ public sealed unsafe class SerReader : IDisposable
 
     /// <summary>
     /// Per-frame timestamps in UTC, or empty when the file carries no trailer (v2 files, or a file
-    /// whose header start time is unset). Indexed by frame. Read lazily from the file trailer on first
-    /// access -- see the <c>_trailer</c> field for why.
+    /// whose header start time is unset). Indexed by frame. A frame the capture did not stamp (a tick
+    /// of zero or less in the trailer) reads <see cref="DateTimeOffset.MinValue"/>. Read lazily from the
+    /// file trailer on first access -- see the <c>_trailer</c> field for why.
     /// </summary>
     public ImmutableArray<DateTimeOffset> Timestamps => _trailer.Value.Timestamps;
 
-    /// <summary>Frame rate derived from the first/last timestamps, or null when unavailable. Triggers
-    /// the lazy trailer read on first access.</summary>
+    /// <summary>Frame rate derived from the first and last stamped frames, or null when unavailable.
+    /// Triggers the lazy trailer read on first access.</summary>
     public double? FramesPerSecond => _trailer.Value.Fps;
 
     private SerReader(MemoryMappedFile mmf, MemoryMappedViewAccessor view, byte* basePtr,
@@ -385,45 +386,70 @@ public sealed unsafe class SerReader : IDisposable
 
         // UTC-vs-local detection (mirrors SER Player): if the header's local start time is closer to
         // the earliest frame timestamp than the UTC start time is, the trailer is in local time, so
-        // shift every timestamp by (UTC - local) to normalise to UTC.
+        // shift every timestamp by (UTC - local) to normalise to UTC. The earliest STAMPED frame: a
+        // frame stamped zero is no time at all, and as the earliest it was nearer a local start behind
+        // UTC than the UTC start, which shifted every stamped frame west of Greenwich by the zone.
         long correction = 0;
         if (header.DateTimeUtcTicks > 0)
         {
             var minTs = long.MaxValue;
             foreach (var t in raw)
             {
-                if (t < minTs)
+                if (t > 0 && t < minTs)
                 {
                     minTs = t;
                 }
             }
 
-            var utcDistance = Math.Abs(header.DateTimeUtcTicks - minTs);
-            var localDistance = Math.Abs(header.DateTimeTicks - minTs);
-            if (localDistance < utcDistance)
+            if (minTs != long.MaxValue)
             {
-                correction = header.DateTimeUtcTicks - header.DateTimeTicks;
+                var utcDistance = Math.Abs(header.DateTimeUtcTicks - minTs);
+                var localDistance = Math.Abs(header.DateTimeTicks - minTs);
+                if (localDistance < utcDistance)
+                {
+                    correction = header.DateTimeUtcTicks - header.DateTimeTicks;
+                }
             }
         }
 
         var builder = ImmutableArray.CreateBuilder<DateTimeOffset>(raw.Length);
         foreach (var t in raw)
         {
-            builder.Add(SerTimestamp.FromTicks(t + correction));
+            // an unstamped frame stays at tick zero, MinValue, rather than becoming a corrected time
+            builder.Add(t > 0 ? SerTimestamp.FromTicks(t + correction) : DateTimeOffset.MinValue);
         }
 
         return builder.MoveToImmutable();
     }
 
+    // Over the first and last STAMPED frames and the frames between them, so an unstamped end frame
+    // (MinValue) does not read as a span of two thousand years
     private static double? ComputeFps(ImmutableArray<DateTimeOffset> timestamps)
     {
-        if (timestamps.IsDefaultOrEmpty || timestamps.Length < 2)
+        if (timestamps.IsDefaultOrEmpty)
         {
             return null;
         }
 
-        var span = timestamps[^1] - timestamps[0];
-        return span > TimeSpan.Zero ? (timestamps.Length - 1) / span.TotalSeconds : null;
+        int first = 0;
+        while (first < timestamps.Length && timestamps[first] == DateTimeOffset.MinValue)
+        {
+            first++;
+        }
+
+        int last = timestamps.Length - 1;
+        while (last > first && timestamps[last] == DateTimeOffset.MinValue)
+        {
+            last--;
+        }
+
+        if (last <= first)
+        {
+            return null;
+        }
+
+        var span = timestamps[last] - timestamps[first];
+        return span > TimeSpan.Zero ? (last - first) / span.TotalSeconds : null;
     }
 
     /// <inheritdoc/>

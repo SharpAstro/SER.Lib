@@ -297,6 +297,57 @@ public class SerReaderWriterTests
         Should.Throw<ArgumentException>(() => reader.ReadFrame16(0, new ushort[3]));
     }
 
+    // A UTC trailer from a capture west of Greenwich (its header's local start five hours behind UTC) with one
+    // frame's tick zeroed, as a capture writes when it stamped no time for that frame
+    private static (TempFile File, DateTimeOffset Start, TimeSpan Step) WriteWithAnUnstampedFrame(int frames, int unstamped)
+    {
+        var tmp = new TempFile();
+        var start = new DateTimeOffset(2025, 1, 20, 3, 0, 0, TimeSpan.Zero);
+        var step = TimeSpan.FromMilliseconds(100);
+        using (var w = new SerWriter(tmp.Path, 2, 2, SerColorId.Mono, 8))
+        {
+            for (var f = 0; f < frames; f++)
+            {
+                w.AppendFrame(new byte[4], start + step * f);
+            }
+        }
+
+        var bytes = File.ReadAllBytes(tmp.Path);
+        BinaryPrimitives.WriteInt64LittleEndian(bytes.AsSpan(162), (start - TimeSpan.FromHours(5)).Ticks);
+        long trailer = SerHeader.Size + frames * 4L;
+        BinaryPrimitives.WriteInt64LittleEndian(bytes.AsSpan((int)(trailer + unstamped * sizeof(long))), 0);
+        File.WriteAllBytes(tmp.Path, bytes);
+        return (tmp, start, step);
+    }
+
+    [Fact]
+    public void AnUnstampedFrame_DoesNotDecideTheTrailersClock()
+    {
+        // tick 0 entered the UTC-or-local test as the earliest time, and 0 is nearer a local start behind UTC than
+        // the UTC start, so every stamped frame was shifted five hours
+        var (tmp, start, step) = WriteWithAnUnstampedFrame(frames: 5, unstamped: 2);
+        using (tmp)
+        using (var reader = SerReader.Open(tmp.Path))
+        {
+            for (var f = 0; f < 5; f++)
+            {
+                reader.Timestamps[f].ShouldBe(f == 2 ? DateTimeOffset.MinValue : start + step * f, $"frame {f}");
+            }
+        }
+    }
+
+    [Fact]
+    public void AnUnstampedFirstFrame_LeavesTheFrameRateToTheStampedOnes()
+    {
+        var (tmp, _, _) = WriteWithAnUnstampedFrame(frames: 5, unstamped: 0);
+        using (tmp)
+        using (var reader = SerReader.Open(tmp.Path))
+        {
+            reader.FramesPerSecond.ShouldNotBeNull();
+            reader.FramesPerSecond.Value.ShouldBe(10.0, tolerance: 1e-6);
+        }
+    }
+
     [Fact]
     public void AppendFrame_InconsistentTimestamps_Throws()
     {
